@@ -1,0 +1,31 @@
+# Home Assistant OS local add-on.
+# Copy this whole project folder to /addons/victoria_hq on the HA machine,
+# then Settings → Add-ons → Add-on store → ⋮ → Check for updates → install Victoria HQ.
+name: Victoria HQ
+version: "1.0.0"
+slug: victoria_hq
+description: Family chores, stars, and rewards. Victoria is CEO.
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+timeout: 180
+apparmor: false
+webui: http://[HOST]:[PORT:8080]
+watchdog: http://[HOST]:[PORT:8080]/
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: Victoria HQ for the iPads
+options:
+  public_url: "https://chores.example.com"
+  better_auth_secret: ""
+  xai_api_key: ""
+  database_url: ""
+schema:
+  public_url: url
+  better_auth_secret: password
+  xai_api_key: password
+  database_url: str

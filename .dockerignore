@@ -1,0 +1,15 @@
+node_modules
+.vercel
+.output
+artifacts
+screenshots
+.git
+tmp
+*.log
+*.zip
+.grok/skills
+.grok/references
+AGENTS.md
+AGENTS.project.md
+playwright-report
+test-results
