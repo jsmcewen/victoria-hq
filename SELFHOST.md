@@ -16,7 +16,7 @@ Put **this whole folder** on the Home Assistant machine. Two good paths:
 | Home Assistant add-on (recommended) | `/addons/victoria_hq` |
 | Portainer / Docker Compose | `/share/victoria-hq` |
 
-Samba: enable the Samba add-on, then from a computer open `\\\\homeassistant\\addons` or `\\\\homeassistant\\share`.
+Samba: enable the Samba add-on, then from a computer open `\\homeassistant\addons` or `\\homeassistant\share`.
 
 Do not copy `node_modules`. The image builds itself.
 
@@ -35,6 +35,8 @@ Do not copy `node_modules`. The image builds itself.
 6. Start the add-on. Open it from the add-on page, or from the iPads via the https URL.
 
 Family data lives on the add-on’s disk. Back up Home Assistant as usual.
+
+If install fails on `npm ci`: copy the latest files over the same folder (especially `Dockerfile` and `.npmrc`), bump is already in `config.yaml`, then Check for updates and rebuild. Raspberry Pi 4 with 2 GB RAM may still run out of memory — 4 GB or a NUC is the comfortable box for the first build.
 
 ---
 

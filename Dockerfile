@@ -7,21 +7,40 @@ WORKDIR /app
 
 # Home Assistant Supervisor may pass these; this image pins its own Node base.
 ARG BUILD_ARCH
-ARG BUILD_VERSION=1.0.0
+ARG BUILD_VERSION=1.0.1
 
-COPY package.json package-lock.json ./
-RUN npm ci
+# Playwright is a sandbox QA dep — never download browsers on the HA box.
+# Native optional packages (lightningcss / tailwind oxide) ship as prebuilt binaries;
+# g++ is only a fallback if npm cannot fetch the matching ARM/x64 binary.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=0
+ENV PUPPETEER_SKIP_DOWNLOAD=1
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+ENV NPM_CONFIG_FUND=false
+ENV NPM_CONFIG_AUDIT=false
+ENV npm_config_jobs=2
+ENV NODE_OPTIONS=--max-old-space-size=2048
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json .npmrc ./
+# --ignore-scripts skips Playwright's browser download. Optional native binaries
+# still install from the lockfile. Fall back to npm install if ci rejects the lock.
+RUN npm ci --ignore-scripts --no-audit --no-fund \
+  || npm install --ignore-scripts --no-audit --no-fund
 
 COPY . .
 ENV NITRO_PRESET=node-server
 ENV VITE_SELF_HOST=true
 ENV VITE_AUTH_ENABLED=true
-RUN npm run build:node && npm prune --omit=dev
+RUN npm run build:node && npm prune --omit=dev --ignore-scripts
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
-ARG BUILD_VERSION=1.0.0
+ARG BUILD_VERSION=1.0.1
 LABEL io.hass.name="Victoria HQ" \
       io.hass.description="Family chores, stars, and rewards. Victoria is CEO." \
       io.hass.type="addon" \

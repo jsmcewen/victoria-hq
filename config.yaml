@@ -2,7 +2,7 @@
 # Copy this whole project folder to /addons/victoria_hq on the HA machine,
 # then Settings → Add-ons → Add-on store → ⋮ → Check for updates → install Victoria HQ.
 name: Victoria HQ
-version: "1.0.0"
+version: "1.0.1"
 slug: victoria_hq
 description: Family chores, stars, and rewards. Victoria is CEO.
 arch:
