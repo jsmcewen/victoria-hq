@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Home Assistant Supervisor may pass these; this image pins its own Node base.
 ARG BUILD_ARCH
-ARG BUILD_VERSION=1.0.2
+ARG BUILD_VERSION=1.0.3
 
 # Playwright is a sandbox QA dep — never download browsers on the HA box.
 # Native optional packages (lightningcss / tailwind oxide) ship as prebuilt binaries;
@@ -40,7 +40,7 @@ RUN npm run build:node && npm prune --omit=dev --ignore-scripts
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
-ARG BUILD_VERSION=1.0.2
+ARG BUILD_VERSION=1.0.3
 LABEL io.hass.name="Victoria HQ" \
       io.hass.description="Family chores, stars, and rewards. Victoria is CEO." \
       io.hass.type="addon" \

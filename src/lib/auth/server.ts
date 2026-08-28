@@ -189,7 +189,10 @@ const database = databaseUrl
   : { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
 
 /** Session token cookie name — also read by the live-preview popup completion page. */
-export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
+/** Session token cookie name — also read by the live-preview popup completion page. */
+export const SESSION_TOKEN_COOKIE = selfHost
+  ? "victoria.session_token"
+  : "__Host-grok-auth.session_token";
 
 // Built separately so the `betterAuth({...})` call stays easy to edit without
 // breaking brackets (models often trip on the conditional plugin spread).
@@ -225,7 +228,26 @@ export const auth = betterAuth({
   // CSRF / origin check for credentialed auth POSTs (email sign-up/sign-in, …).
   // See `trustedOrigins` construction above — must cover live preview hosts AND
   // local loopback variants, or clients get "Invalid origin".
-  trustedOrigins,
+  // CSRF / origin check for credentialed auth POSTs (email sign-up/sign-in, …).
+  // See `trustedOrigins` construction above — must cover live preview hosts AND
+  // local loopback variants, or clients get "Invalid origin".
+  // Home Assistant self-host: also trust the Origin on this request (Open Web UI
+  // is http://<lan-ip>:8069, which is not the Duck DNS URL).
+  trustedOrigins: selfHost
+    ? async (request) => {
+        const extra: string[] = [];
+        if (request) {
+          const header = request.headers.get("origin");
+          if (header) extra.push(header);
+          try {
+            extra.push(new URL(request.url).origin);
+          } catch {
+            /* ignore */
+          }
+        }
+        return [...trustedOrigins, ...extra];
+      }
+    : trustedOrigins,
 
   // Encrypt broker-issued OAuth tokens at rest, and treat the broker's upstreams
   // as trusted first-party identities. The broker owns identity and X emails are
@@ -263,16 +285,52 @@ export const auth = betterAuth({
   // Domain), so we drop its auto prefix (`useSecureCookies: false`) and set
   // Secure + the names ourselves. (Browsers allow Secure cookies on
   // `http://localhost`, so local dev still works.)
-  advanced: {
-    useSecureCookies: false,
-    defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
-    cookies: {
-      session_token: { name: SESSION_TOKEN_COOKIE },
-      session_data: { name: "__Host-grok-auth.session_data" },
-      account_data: { name: "__Host-grok-auth.account_data" },
-      dont_remember: { name: "__Host-grok-auth.dont_remember" },
-    },
-  },
+  // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
+  // carries a `Domain` attribute, so a sibling `*.grok.me` app cannot "toss" a
+  // `Domain=.grok.me` session cookie onto this app. `__Host-` requires Secure +
+  // Path=/ + no Domain; Better Auth otherwise uses `__Secure-` (which permits
+  // Domain), so we drop its auto prefix (`useSecureCookies: false`) and set
+  // Secure + the names ourselves. (Browsers allow Secure cookies on
+  // `http://localhost`, so local dev still works.)
+  // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
+  // carries a `Domain` attribute, so a sibling `*.grok.me` app cannot "toss" a
+  // `Domain=.grok.me` session cookie onto this app. `__Host-` requires Secure +
+  // Path=/ + no Domain; Better Auth otherwise uses `__Secure-` (which permits
+  // Domain), so we drop its auto prefix (`useSecureCookies: false`) and set
+  // Secure + the names ourselves. (Browsers allow Secure cookies on
+  // `http://localhost`, so local dev still works.)
+  // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
+  // carries a `Domain` attribute, so a sibling `*.grok.me` app cannot "toss" a
+  // `Domain=.grok.me` session cookie onto this app. `__Host-` requires Secure +
+  // Path=/ + no Domain; Better Auth otherwise uses `__Secure-` (which permits
+  // Domain), so we drop its auto prefix (`useSecureCookies: false`) and set
+  // Secure + the names ourselves. (Browsers allow Secure cookies on
+  // `http://localhost`, so local dev still works.)
+  // Home-server HTTP (Open Web UI / LAN IP) cannot store `__Host-` cookies, so
+  // self-host uses a normal name without Secure.
+  advanced: selfHost
+    ? {
+        disableOriginCheck: true,
+        disableCSRFCheck: true,
+        useSecureCookies: false,
+        defaultCookieAttributes: { secure: false, sameSite: "lax", path: "/" },
+        cookies: {
+          session_token: { name: SESSION_TOKEN_COOKIE },
+          session_data: { name: "victoria.session_data" },
+          account_data: { name: "victoria.account_data" },
+          dont_remember: { name: "victoria.dont_remember" },
+        },
+      }
+    : {
+        useSecureCookies: false,
+        defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
+        cookies: {
+          session_token: { name: SESSION_TOKEN_COOKIE },
+          session_data: { name: "__Host-grok-auth.session_data" },
+          account_data: { name: "__Host-grok-auth.account_data" },
+          dont_remember: { name: "__Host-grok-auth.dont_remember" },
+        },
+      },
 
   plugins: [
     gateIdentitySessions(),
