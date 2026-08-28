@@ -91,39 +91,82 @@ export const authConfigured =
 // it derives the origin per-request from the (proxied) host, validated against the
 // preview allowlist, which makes the OAuth `redirect_uri` the concrete preview URL
 // the broker's preview client accepts.
-const explicitBaseURL = env("BETTER_AUTH_URL");
-// Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
-// requires a mutable `allowedHosts: string[]`.
-const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
-// Local `npm run dev` (port 8080 contract). Browsers may send Origin as any of
-// these for the same server — trusting only `localhost` rejects `127.0.0.1` and
-// breaks email/password with "Invalid origin".
 const LOCAL_DEV_ORIGINS: string[] = [
   "http://localhost:8080",
   "http://127.0.0.1:8080",
   "http://[::1]:8080",
 ];
+
+function stripTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+/** Extra origins so HA / Duck DNS / port 8069 sign-up is not "Invalid origin". */
+function originVariants(url: string): string[] {
+  const raw = stripTrailingSlash(url.trim());
+  if (!raw) return [];
+  const withProto = raw.includes("://") ? raw : `https://${raw}`;
+  const out = new Set<string>([stripTrailingSlash(withProto)]);
+  try {
+    const parsed = new URL(withProto);
+    const host = parsed.hostname;
+    if (!host) return [...out];
+    for (const proto of ["https", "http"] as const) {
+      out.add(`${proto}://${host}`);
+      for (const port of ["8069", "8080", "443", "80", "8123"]) {
+        out.add(`${proto}://${host}:${port}`);
+      }
+    }
+  } catch {
+    /* keep the raw string */
+  }
+  return [...out];
+}
+
+const selfHost =
+  import.meta.env.VITE_SELF_HOST === "true" || env("VITE_SELF_HOST") === "true";
+
+const extraTrustedOrigins = (env("BETTER_AUTH_TRUSTED_ORIGINS") ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const explicitBaseURL = env("BETTER_AUTH_URL")
+  ? stripTrailingSlash(env("BETTER_AUTH_URL") as string)
+  : undefined;
+
+const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
+
 const baseURL = explicitBaseURL ?? {
-  // Include loopback hosts so dynamic baseURL resolves for local email/password
-  // (not only the preview wildcard).
-  allowedHosts: [...previewAllowedHosts, "localhost", "127.0.0.1", "[::1]"],
-  // `auto` → trust both http:// and https:// expansions of allowedHosts
-  // (preview is https; local dev is http).
+  allowedHosts: [
+    ...previewAllowedHosts,
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+    ...(selfHost ? ["*.duckdns.org", "homeassistant.local", "homeassistant"] : []),
+  ],
   protocol: "auto" as const,
   fallback: "http://localhost:8080",
 };
 
-// Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
-// Missing entries here surface as FORBIDDEN "Invalid origin".
-const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
-  : [
-      // Host wildcards (matched against Origin's host)
-      ...previewAllowedHosts,
-      // Full-origin wildcards (matched against Origin)
-      ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
-      ...LOCAL_DEV_ORIGINS,
-    ];
+const trustedOrigins: string[] = [
+  ...(explicitBaseURL ? originVariants(explicitBaseURL) : []),
+  ...LOCAL_DEV_ORIGINS,
+  ...(selfHost
+    ? [
+        "https://*.duckdns.org",
+        "http://*.duckdns.org",
+        "http://homeassistant.local:8080",
+        "http://homeassistant.local:8069",
+        "https://homeassistant.local:8080",
+        "https://homeassistant.local:8069",
+      ]
+    : [
+        ...previewAllowedHosts,
+        ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
+      ]),
+  ...extraTrustedOrigins,
+];
 
 const databaseUrl = env("DATABASE_URL");
 
