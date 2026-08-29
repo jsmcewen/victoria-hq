@@ -97,26 +97,34 @@ const LOCAL_DEV_ORIGINS: string[] = [
   "http://[::1]:8080",
 ];
 
+/** Hardcoded McEwen home-server origins. HTTP + port 8069 — not https, not grok.me. */
+const FAMILY_PUBLIC_URL = "http://mcewenkidschores.duckdns.org:8069";
+const FAMILY_LAN_URL = "http://10.10.12.149:8069";
+const FAMILY_ORIGINS: string[] = [
+  FAMILY_PUBLIC_URL,
+  FAMILY_LAN_URL,
+  "http://mcewenkidschores.duckdns.org",
+  "http://10.10.12.149:8080",
+  "http://homeassistant.local:8069",
+  "http://homeassistant.local:8080",
+];
+
 function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-/** Extra origins so HA / Duck DNS / port 8069 sign-up is not "Invalid origin". */
 function originVariants(url: string): string[] {
   const raw = stripTrailingSlash(url.trim());
   if (!raw) return [];
-  const withProto = raw.includes("://") ? raw : `https://${raw}`;
-  const out = new Set<string>([stripTrailingSlash(withProto)]);
+  const withProto = raw.includes("://") ? raw : `http://${raw}`;
+  const out = new Set<string>([stripTrailingSlash(withProto), ...FAMILY_ORIGINS]);
   try {
     const parsed = new URL(withProto);
     const host = parsed.hostname;
     if (!host) return [...out];
-    for (const proto of ["https", "http"] as const) {
-      out.add(`${proto}://${host}`);
-      for (const port of ["8069", "8080", "443", "80", "8123"]) {
-        out.add(`${proto}://${host}:${port}`);
-      }
-    }
+    out.add(`http://${host}:8069`);
+    out.add(`http://${host}:8080`);
+    if (parsed.port) out.add(`http://${host}:${parsed.port}`);
   } catch {
     /* keep the raw string */
   }
@@ -124,16 +132,29 @@ function originVariants(url: string): string[] {
 }
 
 const selfHost =
-  import.meta.env.VITE_SELF_HOST === "true" || env("VITE_SELF_HOST") === "true";
+  import.meta.env.VITE_SELF_HOST === "true" ||
+  env("VITE_SELF_HOST") === "true" ||
+  (env("BETTER_AUTH_URL") ?? "").includes("duckdns") ||
+  (env("BETTER_AUTH_URL") ?? "").includes("10.10.12.149");
 
 const extraTrustedOrigins = (env("BETTER_AUTH_TRUSTED_ORIGINS") ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-const explicitBaseURL = env("BETTER_AUTH_URL")
+const fromEnv = env("BETTER_AUTH_URL")
   ? stripTrailingSlash(env("BETTER_AUTH_URL") as string)
   : undefined;
+const envLooksLikeFamilyHttp =
+  !!fromEnv &&
+  fromEnv.startsWith("http://") &&
+  /:8069|:8080/.test(fromEnv) &&
+  !fromEnv.includes("grok.me");
+const explicitBaseURL = selfHost
+  ? envLooksLikeFamilyHttp
+    ? fromEnv
+    : FAMILY_PUBLIC_URL
+  : fromEnv;
 
 const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
 
@@ -143,23 +164,21 @@ const baseURL = explicitBaseURL ?? {
     "localhost",
     "127.0.0.1",
     "[::1]",
-    ...(selfHost ? ["*.duckdns.org", "homeassistant.local", "homeassistant"] : []),
+    ...(selfHost ? ["*.duckdns.org", "homeassistant.local", "homeassistant", "10.10.12.149"] : []),
   ],
   protocol: "auto" as const,
-  fallback: "http://localhost:8080",
+  fallback: selfHost ? FAMILY_PUBLIC_URL : "http://localhost:8080",
 };
 
 const trustedOrigins: string[] = [
+  ...FAMILY_ORIGINS,
   ...(explicitBaseURL ? originVariants(explicitBaseURL) : []),
   ...LOCAL_DEV_ORIGINS,
   ...(selfHost
     ? [
-        "https://*.duckdns.org",
         "http://*.duckdns.org",
-        "http://homeassistant.local:8080",
-        "http://homeassistant.local:8069",
-        "https://homeassistant.local:8080",
-        "https://homeassistant.local:8069",
+        "http://*.duckdns.org:8069",
+        "http://*.duckdns.org:8080",
       ]
     : [
         ...previewAllowedHosts,
@@ -233,21 +252,19 @@ export const auth = betterAuth({
   // local loopback variants, or clients get "Invalid origin".
   // Home Assistant self-host: also trust the Origin on this request (Open Web UI
   // is http://<lan-ip>:8069, which is not the Duck DNS URL).
-  trustedOrigins: selfHost
-    ? async (request) => {
-        const extra: string[] = [];
-        if (request) {
-          const header = request.headers.get("origin");
-          if (header) extra.push(header);
-          try {
-            extra.push(new URL(request.url).origin);
-          } catch {
-            /* ignore */
-          }
-        }
-        return [...trustedOrigins, ...extra];
+  trustedOrigins: async (request) => {
+    const extra: string[] = [...FAMILY_ORIGINS];
+    if (selfHost && request) {
+      const header = request.headers.get("origin");
+      if (header) extra.push(header);
+      try {
+        extra.push(new URL(request.url).origin);
+      } catch {
+        /* ignore */
       }
-    : trustedOrigins,
+    }
+    return [...trustedOrigins, ...extra];
+  },
 
   // Encrypt broker-issued OAuth tokens at rest, and treat the broker's upstreams
   // as trusted first-party identities. The broker owns identity and X emails are
